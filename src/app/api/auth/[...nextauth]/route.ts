@@ -1,9 +1,9 @@
-import NextAuth from "next-auth";
+import NextAuth, { NextAuthOptions } from "next-auth";
 import DiscordProvider from "next-auth/providers/discord";
 import CredentialsProvider from "next-auth/providers/credentials";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "../../../../lib/supabase";
 
-const handler = NextAuth({
+export const authOptions: NextAuthOptions = {
   providers: [
     DiscordProvider({
       clientId: process.env.DISCORD_CLIENT_ID!,
@@ -17,38 +17,34 @@ const handler = NextAuth({
       },
       async authorize(credentials) {
         if (credentials?.code === process.env.SECRET_INVITE_CODE && credentials?.name) {
-          // If the code matches, let them in!
           return { id: credentials.name, name: credentials.name };
         }
-        return null; // Reject if wrong code
+        return null;
       },
     }),
   ],
   callbacks: {
-    // This runs every time someone logs in
     async signIn({ user, account }) {
       if (!user.name) return false;
-
-      // Check if they already exist in our Supabase database
       const { data: existingProfile } = await supabase
         .from("profiles")
         .select("id")
         .eq("name", user.name)
         .single();
 
-      // If they don't exist, add them!
       if (!existingProfile) {
         await supabase.from("profiles").insert([
           {
             name: user.name,
             discord_handle: account?.provider === "discord" ? user.name : null,
-            role: "player", // Everyone defaults to a player
+            role: "player",
           },
         ]);
       }
       return true;
     },
   },
-});
+};
 
+const handler = NextAuth(authOptions);
 export { handler as GET, handler as POST };
