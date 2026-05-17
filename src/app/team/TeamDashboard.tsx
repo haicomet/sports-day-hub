@@ -4,7 +4,8 @@ import { useState } from "react";
 import { supabase } from "../../lib/supabase";
 
 type Team = { id: string; color: string; name: string; score: number; captain_id: string | null };
-type Player = { id: string; name: string; role: string };
+// Added nickname to the Player type
+type Player = { id: string; name: string; nickname?: string | null; role: string };
 type Event = { id: string; name: string; time_string: string; max_players_per_team: number };
 type EventRoster = { id: string; event_id: string; team_id: string; player_id: string };
 
@@ -75,7 +76,7 @@ export default function TeamDashboard({
               <p className="text-sm font-bold tracking-widest uppercase" style={{ color: team.color.toLowerCase() }}>Team HQ</p>
               {captainObj ? (
                 <span className="text-xs bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
-                  👑 Captain: {captainObj.name}
+                  👑 Captain: {captainObj.nickname ? `${captainObj.name} (${captainObj.nickname})` : captainObj.name}
                 </span>
               ) : (
                 <button onClick={claimCaptain} className="text-xs bg-amber-500 hover:bg-amber-400 text-white shadow-sm px-3 py-0.5 rounded-full font-bold transition-all animate-pulse">
@@ -150,7 +151,7 @@ export default function TeamDashboard({
                   <div className="flex flex-wrap gap-2">
                     {signedUpPlayers.map((player) => (
                       <span key={player.id} className={`flex items-center gap-1 text-xs font-bold pl-3 pr-2 py-1 rounded-full ${player.id === currentUserProfile.id ? 'bg-indigo-100 text-indigo-800 border border-indigo-200' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600'}`}>
-                        {player.name}
+                        {player.nickname ? `${player.name} (${player.nickname})` : player.name}
                         {(canManageRoster || player.id === currentUserProfile.id) && (
                           <button onClick={() => toggleEventSignup(event.id, player.id)} className="ml-1 text-slate-400 hover:text-red-500 bg-white/50 dark:bg-black/20 rounded-full w-4 h-4 flex items-center justify-center transition-colors">×</button>
                         )}
@@ -165,7 +166,7 @@ export default function TeamDashboard({
                       {!isFull && availablePlayers.length > 0 ? (
                         <select onChange={(e) => toggleEventSignup(event.id, e.target.value)} value="" className="bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-white text-sm rounded-lg block w-full p-2.5 font-medium cursor-pointer">
                           <option value="" disabled>+ Add Player...</option>
-                          {availablePlayers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                          {availablePlayers.map(p => <option key={p.id} value={p.id}>{p.nickname ? `${p.name} (${p.nickname})` : p.name}</option>)}
                         </select>
                       ) : (
                         <span className="text-sm font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 px-4 py-2 rounded-lg text-center">

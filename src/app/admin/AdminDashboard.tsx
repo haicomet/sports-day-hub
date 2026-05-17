@@ -3,8 +3,9 @@
 import { useState } from "react";
 import { supabase } from "../../lib/supabase";
 
-type Team = { id: string; color: string; name: string; score: number };
-type Player = { id: string; name: string; team_id: string | null; role: string };
+type Team = { id: string; color: string; name: string; score: number; captain_id?: string | null };
+// 🚨 Added nickname to the Player type here as well
+type Player = { id: string; name: string; nickname?: string | null; team_id: string | null; role: string };
 type Event = { id: string; name: string; time_string: string; winner_team_id: string | null; max_players_per_team: number; sort_order: number };
 type EventRoster = { id: string; event_id: string; team_id: string; player_id: string };
 
@@ -34,29 +35,34 @@ export default function AdminDashboard({
   const [editEventData, setEditEventData] = useState<Partial<Event>>({});
   const [isProcessingEvent, setIsProcessingEvent] = useState(false);
 
-  // ==========================================
-  // EVENT SCHEDULE MANAGER FUNCTIONS
-  // ==========================================
-  
+  // --- ACCOUNT CLEANUP MANAGER ---
+  const handleDeletePlayer = async (playerId: string, playerName: string) => {
+    if (!confirm(`Are you sure you want to permanently delete "${playerName}"? This will remove them from all rosters.`)) return;
+    setIsProcessingEvent(true);
+
+    await supabase.from("event_rosters").delete().eq("player_id", playerId);
+    setEventRosters(eventRosters.filter(er => er.player_id !== playerId));
+
+    const teamTheyCaptain = teamsState.find(t => t.captain_id === playerId);
+    if (teamTheyCaptain) {
+      await supabase.from("teams").update({ captain_id: null }).eq("id", teamTheyCaptain.id);
+      setTeamsState(teamsState.map(t => t.id === teamTheyCaptain.id ? { ...t, captain_id: null } : t));
+    }
+
+    await supabase.from("profiles").delete().eq("id", playerId);
+    setPlayers(players.filter(p => p.id !== playerId));
+    setIsProcessingEvent(false);
+  };
+
+  // --- EVENT SCHEDULE MANAGER FUNCTIONS ---
   const handleCreateEvent = async () => {
     if (!newEvent.name || !newEvent.time_string) return;
     setIsProcessingEvent(true);
-
     const nextSortOrder = eventsState.length > 0 ? Math.max(...eventsState.map(e => e.sort_order || 0)) + 1 : 1;
     const eventId = crypto.randomUUID();
-    
-    const newEventObj: Event = {
-      id: eventId,
-      name: newEvent.name,
-      time_string: newEvent.time_string,
-      max_players_per_team: newEvent.max_players_per_team,
-      sort_order: nextSortOrder,
-      winner_team_id: null
-    };
-
+    const newEventObj: Event = { id: eventId, name: newEvent.name, time_string: newEvent.time_string, max_players_per_team: newEvent.max_players_per_team, sort_order: nextSortOrder, winner_team_id: null };
     setEventsState([...eventsState, newEventObj]);
     await supabase.from("events").insert([newEventObj]);
-    
     setNewEvent({ name: "", time_string: "", max_players_per_team: 5 });
     setIsProcessingEvent(false);
   };
@@ -73,13 +79,10 @@ export default function AdminDashboard({
   const handleDeleteEvent = async (id: string) => {
     if (!confirm("Are you sure you want to delete this event? This will remove all sign-ups for it.")) return;
     setIsProcessingEvent(true);
-    
     setEventsState(eventsState.filter(e => e.id !== id));
     setEventRosters(eventRosters.filter(er => er.event_id !== id));
-
     await supabase.from("event_rosters").delete().eq("event_id", id);
     await supabase.from("events").delete().eq("id", id);
-    
     setIsProcessingEvent(false);
   };
 
@@ -87,24 +90,18 @@ export default function AdminDashboard({
     if (direction === 'up' && index === 0) return;
     if (direction === 'down' && index === eventsState.length - 1) return;
     setIsProcessingEvent(true);
-
     const newEvents = [...eventsState];
     const swapIndex = direction === 'up' ? index - 1 : index + 1;
-    
     [newEvents[index], newEvents[swapIndex]] = [newEvents[swapIndex], newEvents[index]];
-    
     const updatedEvents = newEvents.map((e, i) => ({ ...e, sort_order: i + 1 }));
     setEventsState(updatedEvents);
-
     for (const ev of updatedEvents) {
       await supabase.from("events").update({ sort_order: ev.sort_order }).eq("id", ev.id);
     }
     setIsProcessingEvent(false);
   };
 
-  // ==========================================
-  // EXISTING ADMIN FUNCTIONS
-  // ==========================================
+  // --- EXISTING ADMIN FUNCTIONS ---
   const updateScore = async (teamId: string, delta: number) => {
     const team = teamsState.find(t => t.id === teamId);
     if (!team) return;
@@ -136,7 +133,7 @@ export default function AdminDashboard({
 
   const randomizeTeams = async () => {
     setIsDrafting(true);
-    let shuffled = [...players];
+    const shuffled = [...players];
     for (let i = shuffled.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
@@ -155,6 +152,7 @@ export default function AdminDashboard({
   };
 
   const undraftedPlayers = players.filter(p => !p.team_id);
+  const sortedPlayers = [...players].sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <div className="max-w-6xl mx-auto p-6 space-y-12">
@@ -188,7 +186,6 @@ export default function AdminDashboard({
         <div className="bg-indigo-600 p-4">
           <h2 className="text-2xl font-extrabold text-white uppercase tracking-wider flex items-center gap-2">🗓️ Schedule & Queue Manager</h2>
         </div>
-        
         <div className="p-6 bg-slate-50 border-b border-slate-200 flex flex-col md:flex-row gap-4 items-end">
           <div className="flex-1 w-full">
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Event Name</label>
@@ -202,45 +199,26 @@ export default function AdminDashboard({
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Athletes/Team</label>
             <input type="number" min="1" value={newEvent.max_players_per_team} onChange={e => setNewEvent({...newEvent, max_players_per_team: parseInt(e.target.value) || 1})} className="w-full border border-slate-300 rounded-lg p-2 bg-white text-slate-900 focus:ring-2 focus:ring-indigo-500" />
           </div>
-          <button onClick={handleCreateEvent} disabled={isProcessingEvent} className="w-full md:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-6 rounded-lg shadow-md transition-all">
-            + Add Event
-          </button>
+          <button onClick={handleCreateEvent} disabled={isProcessingEvent} className="w-full md:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-6 rounded-lg shadow-md transition-all">+ Add Event</button>
         </div>
 
         <div className="p-6 space-y-3">
           {eventsState.map((event, index) => (
             <div key={event.id} className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-white border border-slate-200 rounded-xl gap-4 shadow-sm">
-              
-              {/* CLEAN UI ARROWS FOR QUEUE */}
               <div className="flex flex-row md:flex-col gap-2">
-                <button 
-                  onClick={() => moveEvent(index, 'up')} 
-                  disabled={index === 0 || isProcessingEvent} 
-                  className="bg-slate-100 hover:bg-slate-200 disabled:opacity-30 text-slate-600 p-2 rounded transition-colors flex items-center justify-center" 
-                  title="Move Up"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 15l7-7 7 7" />
-                  </svg>
+                <button onClick={() => moveEvent(index, 'up')} disabled={index === 0 || isProcessingEvent} className="bg-slate-100 hover:bg-slate-200 disabled:opacity-30 text-slate-600 p-2 rounded transition-colors flex items-center justify-center" title="Move Up">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 15l7-7 7 7" /></svg>
                 </button>
-                <button 
-                  onClick={() => moveEvent(index, 'down')} 
-                  disabled={index === eventsState.length - 1 || isProcessingEvent} 
-                  className="bg-slate-100 hover:bg-slate-200 disabled:opacity-30 text-slate-600 p-2 rounded transition-colors flex items-center justify-center" 
-                  title="Move Down"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" />
-                  </svg>
+                <button onClick={() => moveEvent(index, 'down')} disabled={index === eventsState.length - 1 || isProcessingEvent} className="bg-slate-100 hover:bg-slate-200 disabled:opacity-30 text-slate-600 p-2 rounded transition-colors flex items-center justify-center" title="Move Down">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" /></svg>
                 </button>
               </div>
-
               <div className="flex-1 flex flex-col md:flex-row gap-4">
                 {editingEventId === event.id ? (
                   <>
                     <input type="text" value={editEventData.time_string || ""} onChange={e => setEditEventData({...editEventData, time_string: e.target.value})} className="w-24 border border-slate-300 rounded-lg p-1.5 bg-white text-slate-900 text-sm" />
                     <input type="text" value={editEventData.name || ""} onChange={e => setEditEventData({...editEventData, name: e.target.value})} className="flex-1 border border-slate-300 rounded-lg p-1.5 bg-white text-slate-900 font-bold" />
-                    <input type="number" value={editEventData.max_players_per_team || ""} onChange={e => setEditEventData({...editEventData, max_players_per_team: parseInt(e.target.value)})} className="w-20 border border-slate-300 rounded-lg p-1.5 bg-white text-slate-900 text-sm text-center" title="Max Players" />
+                    <input type="number" value={editEventData.max_players_per_team || ""} onChange={e => setEditEventData({...editEventData, max_players_per_team: parseInt(e.target.value)})} className="w-20 border border-slate-300 rounded-lg p-1.5 bg-white text-slate-900 text-sm text-center" />
                   </>
                 ) : (
                   <>
@@ -250,7 +228,6 @@ export default function AdminDashboard({
                   </>
                 )}
               </div>
-
               <div className="flex items-center gap-2 border-t border-slate-100 md:border-0 pt-3 md:pt-0">
                 {editingEventId === event.id ? (
                   <button onClick={() => handleUpdateEvent(event.id)} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-1.5 px-4 rounded-lg text-sm">Save</button>
@@ -258,15 +235,11 @@ export default function AdminDashboard({
                   <button onClick={() => { setEditingEventId(event.id); setEditEventData(event); }} className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-1.5 px-4 rounded-lg text-sm">Edit</button>
                 )}
                 <button onClick={() => handleDeleteEvent(event.id)} disabled={isProcessingEvent} className="bg-red-50 hover:bg-red-100 text-red-600 font-bold p-2 rounded-lg text-sm transition-colors flex items-center justify-center">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                 </button>
               </div>
-
             </div>
           ))}
-          {eventsState.length === 0 && <p className="text-center text-slate-500 italic py-6">No events scheduled. Create one above!</p>}
         </div>
       </div>
 
@@ -297,7 +270,8 @@ export default function AdminDashboard({
                         {signedUpPlayers.length > 0 ? (
                           signedUpPlayers.map(p => (
                             <span key={p.id} className="text-xs bg-slate-100 border border-slate-200 text-slate-700 px-2 py-1 rounded flex items-center gap-1 font-bold">
-                              {p.name}
+                              {/* Displays nickname in Admin Master Events */}
+                              {p.nickname ? `${p.name} (${p.nickname})` : p.name}
                               <button onClick={() => toggleMasterEventSignup(event.id, team.id, p.id)} className="text-slate-400 hover:text-red-600 ml-1">×</button>
                             </span>
                           ))
@@ -308,7 +282,8 @@ export default function AdminDashboard({
                       {!isFull && availablePlayers.length > 0 && (
                         <select onChange={(e) => toggleMasterEventSignup(event.id, team.id, e.target.value)} value="" className="text-xs border border-slate-300 rounded p-1.5 w-full bg-white text-slate-900 cursor-pointer">
                           <option value="" disabled>+ Assign Player to Event...</option>
-                          {availablePlayers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                          {/* 🚨 Displays nickname in Admin Add Dropdown */}
+                          {availablePlayers.map(p => <option key={p.id} value={p.id}>{p.nickname ? `${p.name} (${p.nickname})` : p.name}</option>)}
                         </select>
                       )}
                     </div>
@@ -366,8 +341,9 @@ export default function AdminDashboard({
                   {teamPlayers.length > 0 ? (
                     teamPlayers.map(player => (
                       <div key={player.id} className="flex items-center justify-between bg-slate-50 p-2 rounded border border-slate-100">
-                        <span className="font-medium text-slate-700">{player.name}</span>
-                        <select value={player.team_id || ""} onChange={(e) => movePlayer(player.id, e.target.value)} className="text-xs border border-slate-300 rounded bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500 p-1 cursor-pointer">
+                        {/* 🚨 Displays nickname in Draft Room */}
+                        <span className="font-medium text-slate-700 truncate">{player.nickname ? `${player.name} (${player.nickname})` : player.name}</span>
+                        <select value={player.team_id || ""} onChange={(e) => movePlayer(player.id, e.target.value)} className="text-xs border border-slate-300 rounded bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500 p-1 ml-2 cursor-pointer">
                           {teams.map(t => <option key={t.id} value={t.id}>{t.color}</option>)}
                         </select>
                       </div>
@@ -385,7 +361,8 @@ export default function AdminDashboard({
           {undraftedPlayers.length > 0 ? (
             undraftedPlayers.map(player => (
               <div key={player.id} className="flex items-center gap-2 bg-amber-50 px-3 py-2 rounded-lg border border-amber-200 text-amber-800">
-                <span className="font-medium">{player.name}</span>
+                {/* Displays nickname in Free Agents */}
+                <span className="font-medium">{player.nickname ? `${player.name} (${player.nickname})` : player.name}</span>
                 <select onChange={(e) => movePlayer(player.id, e.target.value)} defaultValue="" className="text-xs border border-amber-300 rounded bg-white text-slate-900 focus:outline-none p-1 cursor-pointer">
                   <option value="" disabled>Draft to...</option>
                   {teams.map(t => <option key={t.id} value={t.id}>{t.color}</option>)}
@@ -395,6 +372,67 @@ export default function AdminDashboard({
           ) : (
             <span className="text-sm text-slate-400 italic">Everyone has been drafted!</span>
           )}
+        </div>
+      </div>
+
+      {/* 6. PLAYER DIRECTORY & CLEANUP */}
+      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+        <div className="bg-slate-800 p-4">
+          <h2 className="text-2xl font-extrabold text-white uppercase tracking-wider flex items-center gap-2">📇 Player Directory & Cleanup</h2>
+        </div>
+        <div className="p-6">
+          <p className="text-sm text-slate-500 mb-6">View all registered accounts. Use the trash can to delete duplicates or players who can no longer attend.</p>
+          
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b-2 border-slate-200 text-sm font-bold text-slate-600 uppercase tracking-wider">
+                  <th className="p-3">Player Name</th>
+                  <th className="p-3">Role</th>
+                  <th className="p-3">Team</th>
+                  <th className="p-3 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {sortedPlayers.map(player => {
+                  const assignedTeam = teams.find(t => t.id === player.team_id);
+                  const isCaptain = assignedTeam?.captain_id === player.id;
+                  
+                  return (
+                    <tr key={player.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="p-3 font-medium text-slate-900">
+                        {/* Displays nickname in Admin Directory */}
+                        {player.nickname ? `${player.name} (${player.nickname})` : player.name} 
+                        {isCaptain && <span className="ml-2 text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full border border-amber-200">Captain</span>}
+                      </td>
+                      <td className="p-3 text-sm text-slate-500 capitalize">{player.role}</td>
+                      <td className="p-3 text-sm">
+                        {assignedTeam ? (
+                          <span className="font-bold" style={{ color: assignedTeam.color.toLowerCase() }}>{assignedTeam.name}</span>
+                        ) : (
+                          <span className="text-slate-400 italic">Undrafted</span>
+                        )}
+                      </td>
+                      <td className="p-3 text-right">
+                        {player.role !== "admin" ? (
+                          <button 
+                            onClick={() => handleDeletePlayer(player.id, player.name)}
+                            disabled={isProcessingEvent}
+                            className="text-slate-400 hover:text-red-600 p-2 rounded transition-colors inline-flex"
+                            title="Delete Player"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                          </button>
+                        ) : (
+                          <span className="text-xs text-slate-300 italic px-2">Admin</span>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
