@@ -19,6 +19,9 @@ export default async function Navigation() {
               <div className="flex items-baseline space-x-2">
                 <Link href="/" className="hover:bg-slate-800 px-3 py-2 rounded-md text-sm font-medium transition-all">Dashboard</Link>
                 <Link href="/rsvp" className="hover:bg-slate-800 px-3 py-2 rounded-md text-sm font-medium transition-all">RSVP</Link>
+                {session && (
+                  <Link href="/team" className="text-emerald-400 hover:bg-slate-800 px-3 py-2 rounded-md text-sm font-medium transition-all">My Team</Link>
+                )}
                 <Link href="/events" className="hover:bg-slate-800 px-3 py-2 rounded-md text-sm font-medium transition-all">Schedule</Link>
                 
                 {session && (
