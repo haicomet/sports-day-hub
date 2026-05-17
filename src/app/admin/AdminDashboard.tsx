@@ -5,7 +5,7 @@ import { supabase } from "../../lib/supabase";
 
 type Team = { id: string; color: string; name: string; score: number };
 type Player = { id: string; name: string; team_id: string | null; role: string };
-type Event = { id: string; name: string; time_string: string; winner_team_id: string | null; max_players_per_team: number };
+type Event = { id: string; name: string; time_string: string; winner_team_id: string | null; max_players_per_team: number; sort_order: number };
 type EventRoster = { id: string; event_id: string; team_id: string; player_id: string };
 
 export default function AdminDashboard({ 
@@ -28,7 +28,83 @@ export default function AdminDashboard({
   const [eventPoints, setEventPoints] = useState<Record<string, string>>({});
   const [isDrafting, setIsDrafting] = useState(false);
 
-  // --- LIVE SCORE CONTROLLER ---
+  // --- EVENT SCHEDULE MANAGER STATE ---
+  const [newEvent, setNewEvent] = useState({ name: "", time_string: "", max_players_per_team: 5 });
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  const [editEventData, setEditEventData] = useState<Partial<Event>>({});
+  const [isProcessingEvent, setIsProcessingEvent] = useState(false);
+
+  // ==========================================
+  // EVENT SCHEDULE MANAGER FUNCTIONS
+  // ==========================================
+  
+  const handleCreateEvent = async () => {
+    if (!newEvent.name || !newEvent.time_string) return;
+    setIsProcessingEvent(true);
+
+    const nextSortOrder = eventsState.length > 0 ? Math.max(...eventsState.map(e => e.sort_order || 0)) + 1 : 1;
+    const eventId = crypto.randomUUID();
+    
+    const newEventObj: Event = {
+      id: eventId,
+      name: newEvent.name,
+      time_string: newEvent.time_string,
+      max_players_per_team: newEvent.max_players_per_team,
+      sort_order: nextSortOrder,
+      winner_team_id: null
+    };
+
+    setEventsState([...eventsState, newEventObj]);
+    await supabase.from("events").insert([newEventObj]);
+    
+    setNewEvent({ name: "", time_string: "", max_players_per_team: 5 });
+    setIsProcessingEvent(false);
+  };
+
+  const handleUpdateEvent = async (id: string) => {
+    setIsProcessingEvent(true);
+    setEventsState(eventsState.map(e => e.id === id ? { ...e, ...editEventData } : e));
+    await supabase.from("events").update(editEventData).eq("id", id);
+    setEditingEventId(null);
+    setEditEventData({});
+    setIsProcessingEvent(false);
+  };
+
+  const handleDeleteEvent = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this event? This will remove all sign-ups for it.")) return;
+    setIsProcessingEvent(true);
+    
+    setEventsState(eventsState.filter(e => e.id !== id));
+    setEventRosters(eventRosters.filter(er => er.event_id !== id));
+
+    await supabase.from("event_rosters").delete().eq("event_id", id);
+    await supabase.from("events").delete().eq("id", id);
+    
+    setIsProcessingEvent(false);
+  };
+
+  const moveEvent = async (index: number, direction: 'up' | 'down') => {
+    if (direction === 'up' && index === 0) return;
+    if (direction === 'down' && index === eventsState.length - 1) return;
+    setIsProcessingEvent(true);
+
+    const newEvents = [...eventsState];
+    const swapIndex = direction === 'up' ? index - 1 : index + 1;
+    
+    [newEvents[index], newEvents[swapIndex]] = [newEvents[swapIndex], newEvents[index]];
+    
+    const updatedEvents = newEvents.map((e, i) => ({ ...e, sort_order: i + 1 }));
+    setEventsState(updatedEvents);
+
+    for (const ev of updatedEvents) {
+      await supabase.from("events").update({ sort_order: ev.sort_order }).eq("id", ev.id);
+    }
+    setIsProcessingEvent(false);
+  };
+
+  // ==========================================
+  // EXISTING ADMIN FUNCTIONS
+  // ==========================================
   const updateScore = async (teamId: string, delta: number) => {
     const team = teamsState.find(t => t.id === teamId);
     if (!team) return;
@@ -38,7 +114,6 @@ export default function AdminDashboard({
     setCustomScores({ ...customScores, [teamId]: "" });
   };
 
-  // --- EVENT RESULTS CONTROLLER ---
   const lockEventResult = async (eventId: string, winningTeamId: string) => {
     const pointsToAward = parseInt(eventPoints[eventId] || "0", 10);
     setEventsState(eventsState.map(e => e.id === eventId ? { ...e, winner_team_id: winningTeamId } : e));
@@ -47,10 +122,8 @@ export default function AdminDashboard({
     setEventPoints({ ...eventPoints, [eventId]: "" });
   };
 
-  // --- MASTER EVENT ROSTER OVERRIDE ---
   const toggleMasterEventSignup = async (eventId: string, teamId: string, playerId: string) => {
     const existingSignup = eventRosters.find(er => er.event_id === eventId && er.player_id === playerId);
-    
     if (existingSignup) {
       setEventRosters(eventRosters.filter(er => er.id !== existingSignup.id));
       await supabase.from("event_rosters").delete().eq("id", existingSignup.id);
@@ -61,7 +134,6 @@ export default function AdminDashboard({
     }
   };
 
-  // --- THE DRAFT RANDOMIZER ---
   const randomizeTeams = async () => {
     setIsDrafting(true);
     let shuffled = [...players];
@@ -111,7 +183,94 @@ export default function AdminDashboard({
         </div>
       </div>
 
-      {/* 2. MASTER EVENT SIGN-UPS */}
+      {/* 2. EVENT SCHEDULE MANAGER */}
+      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+        <div className="bg-indigo-600 p-4">
+          <h2 className="text-2xl font-extrabold text-white uppercase tracking-wider flex items-center gap-2">🗓️ Schedule & Queue Manager</h2>
+        </div>
+        
+        <div className="p-6 bg-slate-50 border-b border-slate-200 flex flex-col md:flex-row gap-4 items-end">
+          <div className="flex-1 w-full">
+            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Event Name</label>
+            <input type="text" placeholder="e.g. Tug of War" value={newEvent.name} onChange={e => setNewEvent({...newEvent, name: e.target.value})} className="w-full border border-slate-300 rounded-lg p-2 bg-white text-slate-900 focus:ring-2 focus:ring-indigo-500" />
+          </div>
+          <div className="w-full md:w-32">
+            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Time</label>
+            <input type="text" placeholder="10:00 AM" value={newEvent.time_string} onChange={e => setNewEvent({...newEvent, time_string: e.target.value})} className="w-full border border-slate-300 rounded-lg p-2 bg-white text-slate-900 focus:ring-2 focus:ring-indigo-500" />
+          </div>
+          <div className="w-full md:w-32">
+            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Athletes/Team</label>
+            <input type="number" min="1" value={newEvent.max_players_per_team} onChange={e => setNewEvent({...newEvent, max_players_per_team: parseInt(e.target.value) || 1})} className="w-full border border-slate-300 rounded-lg p-2 bg-white text-slate-900 focus:ring-2 focus:ring-indigo-500" />
+          </div>
+          <button onClick={handleCreateEvent} disabled={isProcessingEvent} className="w-full md:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-6 rounded-lg shadow-md transition-all">
+            + Add Event
+          </button>
+        </div>
+
+        <div className="p-6 space-y-3">
+          {eventsState.map((event, index) => (
+            <div key={event.id} className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-white border border-slate-200 rounded-xl gap-4 shadow-sm">
+              
+              {/* CLEAN UI ARROWS FOR QUEUE */}
+              <div className="flex flex-row md:flex-col gap-2">
+                <button 
+                  onClick={() => moveEvent(index, 'up')} 
+                  disabled={index === 0 || isProcessingEvent} 
+                  className="bg-slate-100 hover:bg-slate-200 disabled:opacity-30 text-slate-600 p-2 rounded transition-colors flex items-center justify-center" 
+                  title="Move Up"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 15l7-7 7 7" />
+                  </svg>
+                </button>
+                <button 
+                  onClick={() => moveEvent(index, 'down')} 
+                  disabled={index === eventsState.length - 1 || isProcessingEvent} 
+                  className="bg-slate-100 hover:bg-slate-200 disabled:opacity-30 text-slate-600 p-2 rounded transition-colors flex items-center justify-center" 
+                  title="Move Down"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="flex-1 flex flex-col md:flex-row gap-4">
+                {editingEventId === event.id ? (
+                  <>
+                    <input type="text" value={editEventData.time_string || ""} onChange={e => setEditEventData({...editEventData, time_string: e.target.value})} className="w-24 border border-slate-300 rounded-lg p-1.5 bg-white text-slate-900 text-sm" />
+                    <input type="text" value={editEventData.name || ""} onChange={e => setEditEventData({...editEventData, name: e.target.value})} className="flex-1 border border-slate-300 rounded-lg p-1.5 bg-white text-slate-900 font-bold" />
+                    <input type="number" value={editEventData.max_players_per_team || ""} onChange={e => setEditEventData({...editEventData, max_players_per_team: parseInt(e.target.value)})} className="w-20 border border-slate-300 rounded-lg p-1.5 bg-white text-slate-900 text-sm text-center" title="Max Players" />
+                  </>
+                ) : (
+                  <>
+                    <div className="w-24 font-bold text-indigo-600 flex items-center">{event.time_string}</div>
+                    <div className="flex-1 font-bold text-slate-900 flex items-center text-lg">{event.name}</div>
+                    <div className="w-32 text-slate-500 font-medium text-sm flex items-center">👥 {event.max_players_per_team} Athletes</div>
+                  </>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 border-t border-slate-100 md:border-0 pt-3 md:pt-0">
+                {editingEventId === event.id ? (
+                  <button onClick={() => handleUpdateEvent(event.id)} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-1.5 px-4 rounded-lg text-sm">Save</button>
+                ) : (
+                  <button onClick={() => { setEditingEventId(event.id); setEditEventData(event); }} className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-1.5 px-4 rounded-lg text-sm">Edit</button>
+                )}
+                <button onClick={() => handleDeleteEvent(event.id)} disabled={isProcessingEvent} className="bg-red-50 hover:bg-red-100 text-red-600 font-bold p-2 rounded-lg text-sm transition-colors flex items-center justify-center">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </div>
+
+            </div>
+          ))}
+          {eventsState.length === 0 && <p className="text-center text-slate-500 italic py-6">No events scheduled. Create one above!</p>}
+        </div>
+      </div>
+
+      {/* 3. MASTER EVENT SIGN-UPS */}
       <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
         <div className="bg-emerald-600 p-4">
           <h2 className="text-2xl font-extrabold text-white uppercase tracking-wider flex items-center gap-2">🛠️ Master Event Roster</h2>
@@ -120,7 +279,6 @@ export default function AdminDashboard({
           {eventsState.map(event => (
             <div key={event.id} className="border border-slate-200 rounded-xl bg-slate-50 p-4 shadow-sm">
               <h3 className="text-lg font-bold text-slate-900 mb-4">{event.name} <span className="text-sm font-normal text-slate-500">({event.max_players_per_team} max)</span></h3>
-              
               <div className="space-y-4">
                 {teamsState.map(team => {
                   const teamPlayers = players.filter(p => p.team_id === team.id);
@@ -135,9 +293,7 @@ export default function AdminDashboard({
                         <span className="font-bold text-sm" style={{ color: team.color.toLowerCase() }}>{team.name}</span>
                         <span className="text-xs text-slate-500 font-medium">{signedUpPlayers.length} / {event.max_players_per_team}</span>
                       </div>
-                      
                       <div className="flex flex-wrap gap-2 mb-2">
-                        {/* BULLETPROOF TERNARY CHECK FOR EVENTS */}
                         {signedUpPlayers.length > 0 ? (
                           signedUpPlayers.map(p => (
                             <span key={p.id} className="text-xs bg-slate-100 border border-slate-200 text-slate-700 px-2 py-1 rounded flex items-center gap-1 font-bold">
@@ -146,16 +302,11 @@ export default function AdminDashboard({
                             </span>
                           ))
                         ) : (
-                          <span className="text-xs text-slate-400 italic">No one signed up for this event yet</span>
+                          <span className="text-xs text-slate-400 italic">No athletes assigned yet</span>
                         )}
                       </div>
-
                       {!isFull && availablePlayers.length > 0 && (
-                        <select 
-                          onChange={(e) => toggleMasterEventSignup(event.id, team.id, e.target.value)} 
-                          value="" 
-                          className="text-xs border border-slate-300 rounded p-1.5 w-full bg-white text-slate-900 cursor-pointer"
-                        >
+                        <select onChange={(e) => toggleMasterEventSignup(event.id, team.id, e.target.value)} value="" className="text-xs border border-slate-300 rounded p-1.5 w-full bg-white text-slate-900 cursor-pointer">
                           <option value="" disabled>+ Assign Player to Event...</option>
                           {availablePlayers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                         </select>
@@ -169,9 +320,9 @@ export default function AdminDashboard({
         </div>
       </div>
 
-      {/* 3. EVENT RESULTS CONTROLLER */}
+      {/* 4. EVENT RESULTS CONTROLLER */}
       <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
-        <div className="bg-indigo-600 p-4">
+        <div className="bg-amber-500 p-4">
           <h2 className="text-2xl font-extrabold text-white uppercase tracking-wider flex items-center gap-2">🏆 Log Event Results</h2>
         </div>
         <div className="p-6 space-y-4">
@@ -199,7 +350,7 @@ export default function AdminDashboard({
         </div>
       </div>
 
-      {/* 4. THE DRAFT ROOM */}
+      {/* 5. THE DRAFT ROOM */}
       <div>
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-3xl font-extrabold text-slate-900 uppercase tracking-tight">The Draft Room</h2>
@@ -208,13 +359,10 @@ export default function AdminDashboard({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {teams.map((team) => {
             const teamPlayers = players.filter(p => p.team_id === team.id);
-            
             return (
               <div key={team.id} className="bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden flex flex-col">
                 <div className="p-3 font-bold text-white text-center uppercase tracking-widest text-sm" style={{ backgroundColor: team.color.toLowerCase() }}>{team.name} Roster</div>
                 <div className="p-4 space-y-3 flex-1 flex flex-col">
-                  
-                  {/* BULLETPROOF TERNARY CHECK FOR DRAFT */}
                   {teamPlayers.length > 0 ? (
                     teamPlayers.map(player => (
                       <div key={player.id} className="flex items-center justify-between bg-slate-50 p-2 rounded border border-slate-100">
@@ -225,18 +373,13 @@ export default function AdminDashboard({
                       </div>
                     ))
                   ) : (
-                    <div className="flex-1 flex items-center justify-center py-6">
-                      <span className="text-sm text-slate-400 italic">No players drafted to this team yet.</span>
-                    </div>
+                    <div className="flex-1 flex items-center justify-center py-6"><span className="text-sm text-slate-400 italic">No players drafted.</span></div>
                   )}
-                  
                 </div>
               </div>
             );
           })}
         </div>
-
-        {/* Undrafted Section Check */}
         <div className="mt-8 bg-white rounded-xl shadow-md border border-slate-200 p-6 flex items-center gap-4 flex-wrap">
           <h3 className="font-bold text-slate-800">Undrafted Free Agents:</h3>
           {undraftedPlayers.length > 0 ? (
@@ -253,7 +396,6 @@ export default function AdminDashboard({
             <span className="text-sm text-slate-400 italic">Everyone has been drafted!</span>
           )}
         </div>
-
       </div>
 
     </div>

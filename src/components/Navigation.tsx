@@ -23,6 +23,7 @@ export default async function Navigation() {
                   <Link href="/team" className="text-emerald-400 hover:bg-slate-800 px-3 py-2 rounded-md text-sm font-medium transition-all">My Team</Link>
                 )}
                 <Link href="/events" className="hover:bg-slate-800 px-3 py-2 rounded-md text-sm font-medium transition-all">Schedule</Link>
+                <Link href="/info" className="text-amber-400 hover:bg-slate-800 px-3 py-2 rounded-md text-sm font-medium transition-all">Rules & Info</Link>
                 
                 {session && (
                   <Link href="/admin" className="text-amber-400 hover:bg-slate-800 px-3 py-2 rounded-md text-sm font-medium transition-all">Admin Hub</Link>
