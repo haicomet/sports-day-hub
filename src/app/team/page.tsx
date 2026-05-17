@@ -27,7 +27,7 @@ export default async function TeamPage() {
           <div className="text-6xl mb-4">⏱️</div>
           <h1 className="text-2xl font-black text-slate-900 dark:text-white mb-2 uppercase tracking-tight">Free Agent</h1>
           <p className="text-slate-500 dark:text-slate-400">
-            You haven't been drafted yet. Check back here once the Commissioner finalizes the teams!
+            You haven't been drafted yet. Check back here once the admin finalizes the teams!
           </p>
         </div>
       </div>

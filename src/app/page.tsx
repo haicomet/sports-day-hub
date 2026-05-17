@@ -100,13 +100,13 @@ export default async function Home() {
                 <p className="text-slate-500 dark:text-slate-400 italic text-center py-4">No events scheduled yet.</p>
               )}
             </div>
-            
+           {/*}
             <Link 
               href="/events" 
               className="block w-full text-center mt-8 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold py-3 rounded-xl transition-all"
             >
               View Full Schedule
-            </Link>
+            </Link>*/}
           </div>
         </div>
 

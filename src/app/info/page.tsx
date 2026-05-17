@@ -60,10 +60,6 @@ export default function InfoPage() {
             <p className="mt-1">You must sign up for an event via the Team HQ before participating. If your team does not fill the required slots for an event, you will automatically forfeit that game.</p>
           </div>
           <div>
-            <h3 className="font-bold text-lg text-slate-900 dark:text-white">2. The Commissioner's Word is Law</h3>
-            <p className="mt-1">Any disputes on the field will be settled by the Commissioner. Their ruling is final. Arguing with the Commissioner results in a 5-point penalty for your team.</p>
-          </div>
-          <div>
             <h3 className="font-bold text-lg text-slate-900 dark:text-white">3. Tie-Breakers</h3>
             <p className="mt-1">In the event of a tie at the end of the day, teams will nominate one champion for a sudden-death physical challenge.</p>
           </div>

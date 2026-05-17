@@ -24,7 +24,7 @@ export default async function AdminPage() {
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="bg-white p-8 rounded-xl shadow-md border-l-4 border-red-500 max-w-md text-center">
           <h1 className="text-2xl font-bold text-slate-800 mb-2">Access Denied</h1>
-          <p className="text-slate-500">You must be the commissioner to view the draft room.</p>
+          <p className="text-slate-500">You must be an admin to view the draft room.</p>
         </div>
       </div>
     );
