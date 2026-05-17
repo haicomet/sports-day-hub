@@ -31,15 +31,20 @@ export default async function AdminPage() {
     );
   }
 
-  // 4. If they ARE an admin, fetch the draft data
+  // 4. If they ARE an admin, fetch the draft & event data
   const { data: teams } = await supabase.from("teams").select("*");
   const { data: players } = await supabase.from("profiles").select("*");
+  const { data: events } = await supabase.from("events").select("*").order("sort_order", { ascending: true });
 
   // 5. Pass it to our interactive client component
   return (
     <div className="min-h-screen bg-slate-50 py-8">
-      {/* @ts-ignore - Supabase type casting isn't strict here, but we structured it safely */}
-      <AdminDashboard teams={teams || []} initialPlayers={players || []} />
+      {/* @ts-ignore */}
+      <AdminDashboard 
+        teams={teams || []} 
+        initialPlayers={players || []} 
+        initialEvents={events || []} 
+      />
     </div>
   );
 }
