@@ -18,10 +18,10 @@ export default async function SchedulePage() {
       {/* HEADER */}
       <div className="text-center mb-12 mt-8">
         <h1 className="text-5xl font-extrabold text-slate-900 dark:text-white uppercase tracking-tight mb-4">
-          The Gauntlet
+          Event Lineup
         </h1>
-        <p className="text-xl text-slate-500 dark:text-slate-400">
-          The official sequence of events. No strict times—we move when the Commissioner says we move.
+        <p className="text-slate-500 dark:text-slate-400 text-lg">
+          A complete rundown of all the upcoming events and their champions.
         </p>
       </div>
 
